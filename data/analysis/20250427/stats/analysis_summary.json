@@ -1,0 +1,19 @@
+{
+    "num_sequences": 844,
+    "num_structures": 844,
+    "sequence_length_stats": {
+        "min_length": 3,
+        "max_length": 4298,
+        "mean_length": 162.43483412322274,
+        "median_length": 39.5,
+        "std_length": 515.0319565525197
+    },
+    "nucleotide_composition": {
+        "G": 30.234508917174225,
+        "U": 21.283051898318682,
+        "C": 24.754367409460592,
+        "A": 23.723695247820853,
+        "-": 0.002917684817097633,
+        "X": 0.0014588424085488164
+    }
+}

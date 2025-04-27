@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Data files
+data/raw/*.csv
+data/raw/*.zip
+data/raw/*.json
+data/processed/
+data/visualizations/
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/visualizations/.gitkeep
+
+# Model files
+models/*/*.pt
+models/*/*.pth
+models/*/checkpoints/
+!models/*/.gitkeep
+
+# Kaggle API credentials
+kaggle.json
+
+# Logs and temporary files
+*.log
+*.tmp
+logs/
+tmp/
+
+# Submission files
+submissions/*.csv
+!submissions/.gitkeep
+
+# Large files
+*.hdf5
+*.h5
+*.pkl
+*.pickle
+
+# Specific to RNA 3D structure prediction
+*.pdb
+*.cif
+*.mmcif
+*.xyz
+*.mol2
+
+# Keep model configuration files
+!models/*/model_config.json
+!models/*/training_history.json
+!models/*/evaluation_results.json
+
+# Keep empty directories with .gitkeep
+!.gitkeep

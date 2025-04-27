@@ -1,0 +1,54 @@
+{
+  "model_config": {
+    "model_type": "multi_scale",
+    "embedding_dim": 512,
+    "num_layers": 12,
+    "dropout": 0.1,
+    "learning_rate": 0.0001,
+    "weight_decay": 0.00001,
+    "batch_size": 16,
+    "nucleotide_features": 128,
+    "motif_features": 256,
+    "global_features": 512,
+    "num_layers_per_scale": 4,
+    "use_attention": true,
+    "use_physics_constraints": true,
+    "distance_constraint_weight": 1.0,
+    "angle_constraint_weight": 0.5
+  },
+  "training_config": {
+    "num_epochs": 100,
+    "gradient_accumulation_steps": 1,
+    "memory_efficient": false,
+    "early_stopping_patience": 10,
+    "num_workers": 8,
+    "mixed_precision": true,
+    "checkpoint_interval": 5
+  },
+  "data_config": {
+    "data_dir": "data/raw",
+    "output_dir": "models/l4_gpu",
+    "max_samples": 0,
+    "validation_split": 0.1,
+    "test_split": 0.1,
+    "shuffle": true,
+    "seed": 42
+  },
+  "prediction_config": {
+    "num_predictions": 5,
+    "sequences_file": "data/raw/test_sequences.csv",
+    "output_file": "submissions/l4_gpu_submission.csv"
+  },
+  "evaluation_config": {
+    "sequences_file": "data/raw/validation_sequences.csv",
+    "structures_file": "data/raw/validation_labels.csv",
+    "output_file": "models/l4_gpu/evaluation_results.json"
+  },
+  "system_config": {
+    "device": "cuda",
+    "gpu_memory": 24,
+    "system_memory": 50,
+    "num_cpus": 12,
+    "precision": "float16"
+  }
+}
