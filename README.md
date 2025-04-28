@@ -34,10 +34,12 @@ After successful deployment, train the model with the optimized configuration:
 ```
 
 This will train a model with the following optimized parameters:
-- Batch size: 24
+- Batch size: 8
+- Gradient accumulation steps: 3 (effective batch size: 24)
+- Memory-efficient mode: enabled
 - Number of epochs: 100
 - Device: CUDA (GPU)
-- Number of workers: 16
+- Number of workers: 8
 - Expected training time: ~6-8 hours
 - Expected metrics: TM-score > 0.7, RMSD < 5.0 Å
 

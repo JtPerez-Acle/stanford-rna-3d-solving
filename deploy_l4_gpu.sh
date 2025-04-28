@@ -78,7 +78,8 @@ pip install -q torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url ht
 
 # Install core dependencies
 echo "  • Installing core dependencies..."
-pip install -q numpy pandas matplotlib seaborn scikit-learn biopython tqdm
+# Downgrade NumPy to 1.x for compatibility
+pip install -q numpy==1.24.3 pandas matplotlib seaborn scikit-learn biopython tqdm
 
 # Install visualization dependencies
 echo "  • Installing visualization dependencies..."
@@ -333,10 +334,12 @@ echo "  1. Run the full training pipeline with optimized settings:"
 echo "     ./run_rna_pipeline.sh train --large"
 echo ""
 echo "     This will train a model with the following optimized parameters:"
-echo "     • Batch size: 24"
+echo "     • Batch size: 8"
+echo "     • Gradient accumulation steps: 3 (effective batch size: 24)"
+echo "     • Memory-efficient mode: enabled"
 echo "     • Number of epochs: 100"
 echo "     • Device: cuda (GPU)"
-echo "     • Number of workers: 16"
+echo "     • Number of workers: 8"
 echo "     • Expected training time: ~6-8 hours"
 echo "     • Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å"
 echo ""

@@ -3,19 +3,22 @@
 # This script combines all functionality for training, prediction, and evaluation
 # Optimized for systems with L4 GPU (23GB VRAM), 62GB RAM, and 16 vCPUs
 
+# Set PyTorch memory management environment variables
+export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+
 # Default parameters
 COMMAND="help"
 MODEL_PATH="models/multi_scale/best_model.pt"
 DATA_DIR="data/raw"
 OUTPUT_DIR="models/multi_scale"
-BATCH_SIZE=24
+BATCH_SIZE=8
 NUM_EPOCHS=100
 LEARNING_RATE=0.0001
 WEIGHT_DECAY=0.00001
 DEVICE="cuda"
-NUM_WORKERS=16
-GRADIENT_ACCUMULATION_STEPS=1
-MEMORY_EFFICIENT=false
+NUM_WORKERS=8
+GRADIENT_ACCUMULATION_STEPS=3
+MEMORY_EFFICIENT=true
 NUM_PREDICTIONS=5
 SEQUENCES_FILE="data/raw/test_sequences.csv"
 OUTPUT_FILE="submission.csv"
@@ -135,10 +138,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --large)
             # Large training configuration
-            BATCH_SIZE=24
-            GRADIENT_ACCUMULATION_STEPS=1
+            BATCH_SIZE=8
+            GRADIENT_ACCUMULATION_STEPS=3
+            MEMORY_EFFICIENT=true
             NUM_EPOCHS=100
             OUTPUT_DIR="models/large"
+            NUM_WORKERS=8
             shift
             ;;
         --micro)

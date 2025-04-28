@@ -58,6 +58,26 @@ def train_model(
     Returns:
         dict: Dictionary containing training history.
     """
+    # Apply memory optimizations
+    if memory_efficient and device == 'cuda' and torch.cuda.is_available():
+        # Empty CUDA cache before starting
+        torch.cuda.empty_cache()
+
+        # Enable memory-efficient operations
+        torch.backends.cudnn.benchmark = True
+
+        # Use mixed precision training if available
+        use_amp = hasattr(torch.cuda, 'amp')
+        scaler = torch.cuda.amp.GradScaler() if use_amp else None
+
+        # Print memory status
+        free_memory = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+        print(f"\nStarting training with {free_memory / 1024**3:.2f} GB available GPU memory")
+        print(f"Using mixed precision: {use_amp}")
+    else:
+        use_amp = False
+        scaler = None
+
     # Move model to device
     model = model.to(device)
 
@@ -83,6 +103,7 @@ def train_model(
     print(f"  • Device: {device}")
     print(f"  • Gradient accumulation steps: {gradient_accumulation_steps}")
     print(f"  • Memory-efficient mode: {memory_efficient}")
+    print(f"  • Mixed precision: {use_amp}")
     print(f"  • Early stopping patience: {early_stopping_patience}")
 
     # Training loop
@@ -105,32 +126,65 @@ def train_model(
                     coordinates = batch['coordinates'].to(device)
                     mask = batch['mask'].to(device)
 
-                    # Forward pass
-                    predicted_coords, uncertainty = model(sequence_encoding)
+                    # Use mixed precision for forward pass if available
+                    if use_amp:
+                        with torch.cuda.amp.autocast():
+                            # Forward pass
+                            predicted_coords, uncertainty = model(sequence_encoding)
 
-                    # Apply mask to only consider actual sequence positions (not padding)
-                    masked_pred_coords = predicted_coords * mask.unsqueeze(-1)
-                    masked_coordinates = coordinates * mask.unsqueeze(-1)
+                            # Apply mask to only consider actual sequence positions (not padding)
+                            masked_pred_coords = predicted_coords * mask.unsqueeze(-1)
+                            masked_coordinates = coordinates * mask.unsqueeze(-1)
 
-                    # Calculate loss
-                    loss, loss_components = loss_fn(masked_pred_coords, masked_coordinates, batch['sequence'])
+                            # Calculate loss
+                            loss, loss_components = loss_fn(masked_pred_coords, masked_coordinates, batch['sequence'])
 
-                    # Scale loss for gradient accumulation
-                    loss = loss / gradient_accumulation_steps
+                            # Scale loss for gradient accumulation
+                            loss = loss / gradient_accumulation_steps
 
-                    # Backward pass
-                    loss.backward()
+                        # Backward pass with scaler
+                        scaler.scale(loss).backward()
 
-                    # Update weights only after accumulating gradients
-                    if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
-                        # Add gradient clipping to prevent exploding gradients
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                        # Update weights only after accumulating gradients
+                        if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
+                            # Add gradient clipping to prevent exploding gradients
+                            scaler.unscale_(optimizer)
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
 
-                        # Update weights
-                        optimizer.step()
+                            # Update weights with scaler
+                            scaler.step(optimizer)
+                            scaler.update()
 
-                        # Reset gradients
-                        optimizer.zero_grad()
+                            # Reset gradients
+                            optimizer.zero_grad()
+                    else:
+                        # Standard precision training
+                        # Forward pass
+                        predicted_coords, uncertainty = model(sequence_encoding)
+
+                        # Apply mask to only consider actual sequence positions (not padding)
+                        masked_pred_coords = predicted_coords * mask.unsqueeze(-1)
+                        masked_coordinates = coordinates * mask.unsqueeze(-1)
+
+                        # Calculate loss
+                        loss, loss_components = loss_fn(masked_pred_coords, masked_coordinates, batch['sequence'])
+
+                        # Scale loss for gradient accumulation
+                        loss = loss / gradient_accumulation_steps
+
+                        # Backward pass
+                        loss.backward()
+
+                        # Update weights only after accumulating gradients
+                        if (batch_idx + 1) % gradient_accumulation_steps == 0 or (batch_idx + 1) == len(train_loader):
+                            # Add gradient clipping to prevent exploding gradients
+                            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+                            # Update weights
+                            optimizer.step()
+
+                            # Reset gradients
+                            optimizer.zero_grad()
 
                     # Update progress bar
                     train_loss += loss.item() * gradient_accumulation_steps  # Scale back for reporting
@@ -324,22 +378,55 @@ def plot_training_history(history, output_dir=None):
     plt.show()
 
 
+def optimize_memory():
+    """Apply memory optimization techniques for PyTorch."""
+    # Empty CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # Set memory allocation strategy
+    if hasattr(torch.cuda, 'memory_stats'):
+        # Print initial memory stats
+        print("\nInitial CUDA memory stats:")
+        for k, v in torch.cuda.memory_stats().items():
+            if 'bytes' in k and v > 0:
+                print(f"  {k}: {v / 1024**2:.1f} MB")
+
+    # Enable memory-efficient operations
+    torch.backends.cudnn.benchmark = True
+
+    # Set PyTorch memory allocator settings if using PyTorch 1.11+
+    if hasattr(torch, 'set_per_process_memory_fraction'):
+        # Reserve 90% of available memory to avoid OOM
+        torch.set_per_process_memory_fraction(0.9)
+
+    # Print available GPU memory
+    if torch.cuda.is_available():
+        free_memory = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+        print(f"\nAvailable GPU memory: {free_memory / 1024**3:.2f} GB")
+
+    return
+
+
 def main():
     """Main function to train an RNA 3D structure prediction model."""
     import argparse
 
+    # Apply memory optimizations
+    optimize_memory()
+
     parser = argparse.ArgumentParser(description="Train RNA 3D structure prediction model")
     parser.add_argument("--data-dir", default="data/raw", help="Directory containing the data")
     parser.add_argument("--output-dir", default="models/multi_scale", help="Directory to save model and results")
-    parser.add_argument("--batch-size", type=int, default=16, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--num-epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight-decay", type=float, default=1e-5, help="Weight decay")
     parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="Device to train on")
-    parser.add_argument("--num-workers", type=int, default=4, help="Number of workers for data loading")
+    parser.add_argument("--num-workers", type=int, default=8, help="Number of workers for data loading")
     parser.add_argument("--early-stopping-patience", type=int, default=10, help="Early stopping patience")
-    parser.add_argument("--gradient-accumulation-steps", type=int, default=1, help="Number of steps to accumulate gradients")
-    parser.add_argument("--memory-efficient", action="store_true", help="Use memory-efficient training techniques")
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=3, help="Number of steps to accumulate gradients")
+    parser.add_argument("--memory-efficient", action="store_true", default=True, help="Use memory-efficient training techniques")
 
     args = parser.parse_args()
 
