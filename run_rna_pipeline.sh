@@ -1,19 +1,19 @@
 #!/bin/bash
 # Unified RNA 3D Structure Prediction Pipeline
 # This script combines all functionality for training, prediction, and evaluation
-# Optimized for systems with L4 GPU (24GB VRAM), 50GB RAM, and 12 vCPUs
+# Optimized for systems with L4 GPU (23GB VRAM), 62GB RAM, and 16 vCPUs
 
 # Default parameters
 COMMAND="help"
 MODEL_PATH="models/multi_scale/best_model.pt"
 DATA_DIR="data/raw"
 OUTPUT_DIR="models/multi_scale"
-BATCH_SIZE=16
+BATCH_SIZE=24
 NUM_EPOCHS=100
 LEARNING_RATE=0.0001
 WEIGHT_DECAY=0.00001
 DEVICE="cuda"
-NUM_WORKERS=8
+NUM_WORKERS=16
 GRADIENT_ACCUMULATION_STEPS=1
 MEMORY_EFFICIENT=false
 NUM_PREDICTIONS=5
@@ -135,7 +135,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --large)
             # Large training configuration
-            BATCH_SIZE=16
+            BATCH_SIZE=24
             GRADIENT_ACCUMULATION_STEPS=1
             NUM_EPOCHS=100
             OUTPUT_DIR="models/large"
@@ -232,25 +232,25 @@ run_training() {
     if [ "$MAX_SAMPLES" -gt 0 ]; then
         SUBSET_DIR="data/subset"
         mkdir -p "$SUBSET_DIR"
-        
+
         echo "▶ Creating a subset of the data with $MAX_SAMPLES samples..."
-        
+
         # Create subset of training data
         head -n 1 "$DATA_DIR/train_sequences.csv" > "$SUBSET_DIR/train_sequences.csv"
         head -n $(($MAX_SAMPLES + 1)) "$DATA_DIR/train_sequences.csv" | tail -n $MAX_SAMPLES >> "$SUBSET_DIR/train_sequences.csv"
-        
+
         head -n 1 "$DATA_DIR/train_labels.csv" > "$SUBSET_DIR/train_labels.csv"
         grep -f <(cut -d, -f1 "$SUBSET_DIR/train_sequences.csv" | tail -n +2) "$DATA_DIR/train_labels.csv" >> "$SUBSET_DIR/train_labels.csv"
-        
+
         # Create subset of validation data
         head -n 1 "$DATA_DIR/validation_sequences.csv" > "$SUBSET_DIR/validation_sequences.csv"
         head -n 21 "$DATA_DIR/validation_sequences.csv" | tail -n 20 >> "$SUBSET_DIR/validation_sequences.csv"
-        
+
         head -n 1 "$DATA_DIR/validation_labels.csv" > "$SUBSET_DIR/validation_labels.csv"
         grep -f <(cut -d, -f1 "$SUBSET_DIR/validation_sequences.csv" | tail -n +2 | sed 's/_[0-9]*$//' | sort -u) "$DATA_DIR/validation_labels.csv" >> "$SUBSET_DIR/validation_labels.csv"
-        
+
         echo "✓ Created subset data with $MAX_SAMPLES training samples and 20 validation samples"
-        
+
         # Use subset data for training
         DATA_DIR="$SUBSET_DIR"
     fi

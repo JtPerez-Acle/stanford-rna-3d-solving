@@ -2,34 +2,65 @@
 
 This project implements a groundbreaking multi-scale equivariant architecture for RNA 3D structure prediction with physics-informed neural networks for the [Stanford RNA 3D Folding Kaggle competition](https://www.kaggle.com/competitions/stanford-rna-3d-folding).
 
-## L4 GPU Deployment Quick Guide
+## Deployment Quick Guide
 
-To deploy and run on an L4 GPU system (24GB VRAM, 50GB RAM, 12 vCPU):
+This project is optimized for systems with an NVIDIA L4 GPU (23GB VRAM), 62GB RAM, and 16 vCPUs. Follow these steps to deploy and run the pipeline:
 
-1. **Deploy the environment**:
+### Step 1: Clone and Deploy
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd stanford-rna-3d-solving
+   ```
+
+2. **Deploy the environment**:
    ```bash
    ./deploy_l4_gpu.sh
    ```
+   This script will:
+   - Create a virtual environment
+   - Install all dependencies
+   - Download the competition data
+   - Run tests to verify GPU functionality
+   - Prepare the system for training
 
-2. **Train a model** (optimized for L4 GPU):
-   ```bash
-   ./run_rna_pipeline.sh train --data-dir data/raw --output-dir models/l4_gpu --batch-size 16 --num-epochs 100 --device cuda --num-workers 8
-   ```
-   Expected training time: ~6-8 hours
-   Expected metrics: TM-score > 0.7, RMSD < 5.0 Å
+### Step 2: Train the Model
 
-3. **Generate predictions** for submission:
-   ```bash
-   ./run_rna_pipeline.sh predict --model-path models/l4_gpu/best_model.pt --output-file submissions/l4_gpu_submission.csv --num-predictions 5
-   ```
-   Expected generation time: ~10-15 minutes
-   Output: CSV file ready for Kaggle submission
+After successful deployment, train the model with the optimized configuration:
 
-4. **Evaluate model performance**:
-   ```bash
-   ./run_rna_pipeline.sh evaluate --model-path models/l4_gpu/best_model.pt
-   ```
-   This will provide detailed metrics on validation data
+```bash
+./run_rna_pipeline.sh train --large
+```
+
+This will train a model with the following optimized parameters:
+- Batch size: 24
+- Number of epochs: 100
+- Device: CUDA (GPU)
+- Number of workers: 16
+- Expected training time: ~6-8 hours
+- Expected metrics: TM-score > 0.7, RMSD < 5.0 Å
+
+### Step 3: Generate Predictions
+
+Once training is complete, generate predictions for submission:
+
+```bash
+./run_rna_pipeline.sh predict --model-path models/large/best_model.pt --output-file submissions/submission.csv
+```
+
+Expected generation time: ~10-15 minutes
+Output: CSV file ready for Kaggle submission
+
+### Step 4: Evaluate Model Performance
+
+Evaluate the model's performance on validation data:
+
+```bash
+./run_rna_pipeline.sh evaluate --model-path models/large/best_model.pt
+```
+
+This will provide detailed metrics including TM-score and RMSD.
 
 For detailed deployment instructions, see [L4_GPU_DEPLOYMENT.md](L4_GPU_DEPLOYMENT.md).
 

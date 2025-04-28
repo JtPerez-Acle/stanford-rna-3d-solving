@@ -32,9 +32,9 @@ echo "    - Available disk space: ${disk_space}GB"
 echo "    - CPU cores: ${cpu_cores}"
 
 # Check minimum requirements
-if [ $total_memory -lt 40 ]; then
-    echo "⚠ Warning: System has less than 40GB of RAM (${total_memory}GB)"
-    echo "  This may affect performance. Recommended: 50GB+"
+if [ $total_memory -lt 50 ]; then
+    echo "⚠ Warning: System has less than 50GB of RAM (${total_memory}GB)"
+    echo "  This may affect performance. Recommended: 62GB+"
 fi
 
 if [ ${disk_space%.*} -lt 30 ]; then
@@ -42,9 +42,9 @@ if [ ${disk_space%.*} -lt 30 ]; then
     echo "  This may not be enough for the dataset and models. Recommended: 40GB+"
 fi
 
-if [ $cpu_cores -lt 8 ]; then
-    echo "⚠ Warning: System has less than 8 CPU cores (${cpu_cores})"
-    echo "  This may affect performance. Recommended: 12+ cores"
+if [ $cpu_cores -lt 12 ]; then
+    echo "⚠ Warning: System has less than 12 CPU cores (${cpu_cores})"
+    echo "  This may affect performance. Recommended: 16+ cores"
 fi
 
 # Check if CUDA is available
@@ -219,17 +219,50 @@ else
 fi
 
 # Run a quick test to verify everything is working
-echo "▶ Running a quick test..."
-set +e  # Don't exit on error
-./run_rna_pipeline.sh test --device cuda
-test_result=$?
-set -e  # Exit on error again
+echo "▶ Running a quick test to verify GPU functionality..."
 
-if [ $test_result -eq 0 ]; then
-    echo "✓ Test completed successfully"
+# First check if CUDA is available
+if python -c "import torch; print(torch.cuda.is_available())" | grep -q "True"; then
+    echo "  • CUDA is available, testing with GPU..."
+    set +e  # Don't exit on error
+    ./run_rna_pipeline.sh test --device cuda
+    test_result=$?
+    set -e  # Exit on error again
+
+    if [ $test_result -eq 0 ]; then
+        echo "✓ GPU test completed successfully"
+    else
+        echo "⚠ GPU test completed with issues"
+        echo "  • Trying CPU test as fallback..."
+
+        set +e  # Don't exit on error
+        ./run_rna_pipeline.sh test --device cpu
+        cpu_test_result=$?
+        set -e  # Exit on error again
+
+        if [ $cpu_test_result -eq 0 ]; then
+            echo "✓ CPU test completed successfully"
+            echo "  • The model works on CPU, but there may be issues with GPU configuration"
+            echo "  • For optimal performance, please troubleshoot GPU issues before running the full pipeline"
+        else
+            echo "✗ Both GPU and CPU tests failed"
+            echo "  • Please check the error messages and troubleshoot before proceeding"
+        fi
+    fi
 else
-    echo "⚠ Test completed with issues"
-    echo "  You may need to troubleshoot before running the full pipeline"
+    echo "  • CUDA is not available, testing with CPU..."
+    set +e  # Don't exit on error
+    ./run_rna_pipeline.sh test --device cpu
+    test_result=$?
+    set -e  # Exit on error again
+
+    if [ $test_result -eq 0 ]; then
+        echo "✓ CPU test completed successfully"
+        echo "  • Note: Training will be much slower on CPU. For optimal performance, configure GPU support."
+    else
+        echo "✗ CPU test failed"
+        echo "  • Please check the error messages and troubleshoot before proceeding"
+    fi
 fi
 
 # Verify all components are ready
@@ -294,17 +327,24 @@ echo "╚═══════════════════════�
 echo ""
 echo "The RNA 3D structure prediction pipeline has been deployed successfully."
 echo ""
-echo "▶ To train a model with L4 GPU optimized settings:"
-echo "  ./run_rna_pipeline.sh train --data-dir data/raw --output-dir models/l4_gpu --batch-size 16 --num-epochs 100 --device cuda --num-workers 8"
+echo "▶ NEXT STEPS:"
 echo ""
-echo "▶ To generate predictions with the trained model:"
-echo "  ./run_rna_pipeline.sh predict --model-path models/l4_gpu/best_model.pt --output-file submissions/l4_gpu_submission.csv --num-predictions 5"
+echo "  1. Run the full training pipeline with optimized settings:"
+echo "     ./run_rna_pipeline.sh train --large"
 echo ""
-echo "▶ To evaluate the model:"
-echo "  ./run_rna_pipeline.sh evaluate --model-path models/l4_gpu/best_model.pt"
+echo "     This will train a model with the following optimized parameters:"
+echo "     • Batch size: 24"
+echo "     • Number of epochs: 100"
+echo "     • Device: cuda (GPU)"
+echo "     • Number of workers: 16"
+echo "     • Expected training time: ~6-8 hours"
+echo "     • Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å"
 echo ""
-echo "▶ Expected training time: ~6-8 hours"
-echo "▶ Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å"
+echo "  2. Generate predictions with the trained model:"
+echo "     ./run_rna_pipeline.sh predict --model-path models/large/best_model.pt --output-file submissions/submission.csv"
 echo ""
-echo "For more options, run:"
+echo "  3. Evaluate the model performance:"
+echo "     ./run_rna_pipeline.sh evaluate --model-path models/large/best_model.pt"
+echo ""
+echo "For more options and detailed configuration, run:"
 echo "  ./run_rna_pipeline.sh help"
