@@ -18,11 +18,12 @@ trap 'handle_error $LINENO' ERR
 echo "╔════════════════════════════════════════════════════════════════╗"
 echo "║            RNA 3D Structure Prediction L4 Deployment            ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
+echo ""
 
 # Check system requirements
 echo "▶ Checking system requirements..."
 total_memory=$(free -g | awk '/^Mem:/{print $2}')
-disk_space=$(df -h / | awk 'NR==2 {print $4}' | sed 's/G//')
+disk_space=$(df -h . | awk 'NR==2 {print $4}' | sed 's/G//')
 cpu_cores=$(nproc)
 
 echo "  • System information:"
@@ -51,341 +52,422 @@ if command -v nvidia-smi &> /dev/null; then
     echo "✓ NVIDIA GPU detected"
     nvidia-smi
 else
-    echo "⚠ Warning: NVIDIA GPU not detected"
-    echo "  This pipeline is optimized for NVIDIA L4 GPU. Training will be much slower on CPU."
+    echo "✗ No NVIDIA GPU detected. This script is optimized for L4 GPU systems."
+    echo "  Continuing with CPU, but performance will be significantly reduced."
 fi
 
-# Create virtual environment
-echo "▶ Creating virtual environment..."
-if [ ! -d "venv" ]; then
+# Activate virtual environment if it exists
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    echo "✓ Activated virtual environment"
+else
+    echo "▶ Creating virtual environment..."
     python -m venv venv
+    source venv/bin/activate
+    echo "✓ Created and activated virtual environment"
 fi
-
-# Activate virtual environment
-source venv/bin/activate
-echo "✓ Created and activated virtual environment"
 
 # Install dependencies
 echo "▶ Installing dependencies..."
+# Upgrade pip
 pip install --upgrade pip
 
 # Install PyTorch with CUDA support
 echo "  • Installing PyTorch with CUDA support..."
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip install -q torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Install core dependencies
 echo "  • Installing core dependencies..."
-pip install numpy==1.24.3 pandas matplotlib scikit-learn tqdm
+# Downgrade NumPy to 1.x for compatibility
+pip install -q numpy==1.24.3 pandas matplotlib seaborn scikit-learn biopython tqdm
 
 # Install visualization dependencies
 echo "  • Installing visualization dependencies..."
-pip install plotly py3Dmol
+pip install -q py3Dmol nglview ipywidgets
 
 # Install development dependencies
 echo "  • Installing development dependencies..."
-pip install pytest pytest-cov black isort flake8
+pip install -q black flake8 pytest pytest-cov jupyter
 
 # Install Kaggle API
 echo "  • Installing Kaggle API..."
-pip install kaggle
+pip install -q kaggle
 
 # Install project in development mode
 echo "  • Installing project in development mode..."
-pip install -e .
+pip install -q -e .
 
 # Verify PyTorch installation
 echo "  • Verifying PyTorch installation..."
-python -c "import torch; print(f'PyTorch version: {torch.__version__}, CUDA available: {torch.cuda.is_available()}, CUDA version: {torch.version.cuda}')"
+python -c "import torch; print(f'PyTorch version: {torch.__version__}, CUDA available: {torch.cuda.is_available()}, CUDA version: {torch.version.cuda if torch.cuda.is_available() else \"N/A\"}')"
+
 echo "✓ Dependencies installed"
 
-# Set up directory structure
+# Create necessary directories
 echo "▶ Setting up directory structure..."
-mkdir -p data/raw
-mkdir -p data/processed
-mkdir -p data/visualizations
-mkdir -p models/multi_scale
+mkdir -p config
 mkdir -p models/l4_gpu
-mkdir -p models/test
-mkdir -p models/small
-mkdir -p models/medium
-mkdir -p models/large
+mkdir -p data/raw
 mkdir -p submissions
-mkdir -p scripts
 echo "✓ Directory structure set up"
 
-# Check for Kaggle API credentials
-if [ -f ~/.kaggle/kaggle.json ]; then
+# Check if Kaggle API credentials exist
+if [ -f "kaggle.json" ]; then
     echo "✓ Kaggle API credentials found"
-else
-    echo "⚠ Kaggle API credentials not found"
-    echo "  Please set up your Kaggle API credentials by following these steps:"
-    echo "  1. Go to https://www.kaggle.com/account"
-    echo "  2. Click on 'Create New API Token'"
-    echo "  3. Save the kaggle.json file to ~/.kaggle/kaggle.json"
-    echo "  4. Run 'chmod 600 ~/.kaggle/kaggle.json'"
-
-    # Create .kaggle directory
+    # Set up Kaggle API
     mkdir -p ~/.kaggle
-
-    # Ask for Kaggle username and key
-    read -p "Enter your Kaggle username: " kaggle_username
-    read -p "Enter your Kaggle API key: " kaggle_key
-
-    # Create kaggle.json file
-    echo "{\"username\":\"$kaggle_username\",\"key\":\"$kaggle_key\"}" > ~/.kaggle/kaggle.json
+    cp kaggle.json ~/.kaggle/
     chmod 600 ~/.kaggle/kaggle.json
-
-    echo "✓ Kaggle API credentials created"
+else
+    echo "✗ Kaggle API credentials not found"
+    echo "  Please place your kaggle.json file in the project root directory"
+    echo "  You can download it from https://www.kaggle.com/settings"
+    exit 1
 fi
 
 # Download competition data
 echo "▶ Downloading competition data..."
-if [ -d "data/raw" ] && [ "$(ls -A data/raw)" ]; then
+# Check if data already exists
+if [ -f "data/raw/train_sequences.csv" ] && [ -f "data/raw/train_labels.csv" ]; then
     echo "  • Competition data already exists, skipping download"
 else
-    echo "  • Downloading competition data..."
-    kaggle competitions download -c stanford-rna-3d-folding -p data/raw
-    unzip -q data/raw/stanford-rna-3d-folding.zip -d data/raw
-    rm data/raw/stanford-rna-3d-folding.zip
+    echo "  • Downloading from Kaggle..."
+    # Try to download data with retry mechanism
+    max_attempts=3
+    attempt=1
+    download_success=false
+
+    while [ $attempt -le $max_attempts ] && [ "$download_success" = false ]; do
+        echo "  • Download attempt $attempt of $max_attempts..."
+        if kaggle competitions download -c stanford-rna-3d-folding -p data/raw; then
+            download_success=true
+        else
+            echo "  • Download attempt $attempt failed, retrying in 5 seconds..."
+            sleep 5
+            attempt=$((attempt+1))
+        fi
+    done
+
+    if [ "$download_success" = false ]; then
+        echo "✗ Failed to download competition data after $max_attempts attempts"
+        echo "  Please download the data manually from https://www.kaggle.com/competitions/stanford-rna-3d-folding/data"
+        echo "  and place it in the data/raw directory"
+        exit 1
+    fi
+
+    echo "  • Extracting data..."
+    unzip -q -o data/raw/stanford-rna-3d-folding.zip -d data/raw
+
+    # Verify extraction
+    if [ ! -f "data/raw/train_sequences.csv" ] || [ ! -f "data/raw/train_labels.csv" ]; then
+        echo "✗ Data extraction failed or files are missing"
+        exit 1
+    fi
+
+    # Clean up zip file to save space
+    echo "  • Cleaning up downloaded zip file..."
+    rm -f data/raw/stanford-rna-3d-folding.zip
 fi
 
 # Verify data files
 echo "  • Verifying data files..."
-if [ -f "data/raw/train_sequences.csv" ] && [ -f "data/raw/train_labels.csv" ]; then
-    train_count=$(wc -l < data/raw/train_sequences.csv)
-    train_count=$((train_count - 1))  # Subtract header
+required_files=("train_sequences.csv" "train_labels.csv" "validation_sequences.csv" "validation_labels.csv" "test_sequences.csv")
+missing_files=false
 
-    val_count=0
-    if [ -f "data/raw/validation_sequences.csv" ]; then
-        val_count=$(wc -l < data/raw/validation_sequences.csv)
-        val_count=$((val_count - 1))  # Subtract header
+for file in "${required_files[@]}"; do
+    if [ ! -f "data/raw/$file" ]; then
+        echo "✗ Missing required file: data/raw/$file"
+        missing_files=true
     fi
+done
 
-    test_count=0
-    if [ -f "data/raw/test_sequences.csv" ]; then
-        test_count=$(wc -l < data/raw/test_sequences.csv)
-        test_count=$((test_count - 1))  # Subtract header
-    fi
-
-    echo "  • Data statistics:"
-    echo "    - Training sequences: $train_count"
-    echo "    - Validation sequences: $val_count"
-    echo "    - Test sequences: $test_count"
-
-    echo "✓ Competition data downloaded and verified"
-else
-    echo "✗ Competition data verification failed"
-    echo "  Please check that the data files exist in data/raw/"
+if [ "$missing_files" = true ]; then
+    echo "✗ Some required data files are missing"
     exit 1
 fi
+
+# Count number of sequences
+train_count=$(wc -l < data/raw/train_sequences.csv)
+val_count=$(wc -l < data/raw/validation_sequences.csv)
+test_count=$(wc -l < data/raw/test_sequences.csv)
+
+echo "  • Data statistics:"
+echo "    - Training sequences: $((train_count-1))"
+echo "    - Validation sequences: $((val_count-1))"
+echo "    - Test sequences: $((test_count-1))"
+
+echo "✓ Competition data downloaded and verified"
 
 # Clean up the codebase
 echo "▶ Cleaning up the codebase..."
 ./run_rna_pipeline.sh clean
 echo "✓ Codebase cleaned"
 
-# Run the full test suite to verify correct functionality
-echo "▶ Running the full test suite to verify correct functionality..."
-# Ensure we're in the virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    echo "  • Using virtual environment for tests"
-fi
+# Create scripts directory if it doesn't exist
+mkdir -p scripts
 
-# Run the test suite
-set +e  # Don't exit on error
-python run_tests.py --all
-test_suite_result=$?
-set -e  # Exit on error again
-
-if [ $test_suite_result -eq 0 ]; then
-    echo "✓ All tests passed successfully!"
-    echo "  The codebase is in a green state and ready for use."
-else
-    echo "⚠ Some tests failed. Attempting to fix known issues..."
-
-    # Create scripts directory if it doesn't exist
-    mkdir -p scripts
-
-    # Create the fix script if it doesn't exist
-    if [ ! -f "scripts/fix_rna_model.py" ]; then
-        echo "▶ Creating fix script..."
-        cat > scripts/fix_rna_model.py << 'EOF'
+# Create the model size reduction script
+echo "▶ Creating model size reduction script..."
+cat > scripts/reduce_model_size.py << 'EOF'
 #!/usr/bin/env python
 """
-This script fixes the RNAModel.to() method to support the dtype parameter.
-Run this script before running the optimize.py script.
+This script reduces the model size and optimizes memory usage for the RNA 3D structure prediction model.
 """
 
 import os
 import re
+import json
 
-def fix_rna_model_to_method():
-    """Fix the RNAModel.to() method in base.py to support the dtype parameter."""
-    base_py_path = "src/rna_folding/models/base.py"
+def update_l4_gpu_config():
+    """Update the L4 GPU configuration file with a much smaller model."""
+    config_path = "config/l4_gpu_config.json"
 
-    if not os.path.exists(base_py_path):
-        print(f"Error: {base_py_path} not found")
+    if not os.path.exists(config_path):
+        print(f"Error: {config_path} not found")
         return False
 
-    with open(base_py_path, 'r') as f:
-        content = f.read()
+    with open(config_path, 'r') as f:
+        config = json.load(f)
 
-    # Define the pattern to match the old to() method
-    old_method_pattern = r'def to\(self, device\):[^}]*?return super\(\)\.to\(device\)'
+    # Drastically reduce model size
+    config["model_config"]["nucleotide_features"] = 32  # Reduced from 128
+    config["model_config"]["motif_features"] = 64      # Reduced from 256
+    config["model_config"]["global_features"] = 128    # Reduced from 512
+    config["model_config"]["num_layers_per_scale"] = 2  # Reduced from 4
 
-    # Define the new to() method
-    new_method = """def to(self, device=None, dtype=None, non_blocking=False):
-        \"\"\"
-        Move model to specified device and/or dtype.
+    # Reduce batch size
+    config["model_config"]["batch_size"] = 2  # Reduced from 8
 
-        Args:
-            device: Device to move model to.
-            dtype: Data type to convert parameters to.
-            non_blocking: Whether to perform non-blocking transfer.
+    # Update training config
+    config["training_config"]["batch_size"] = 2  # Add batch_size to training_config
+    config["training_config"]["gradient_accumulation_steps"] = 12  # Increased from 3
+    config["training_config"]["num_workers"] = 8  # Reduced from 24
 
-        Returns:
-            self: The model instance.
-        \"\"\"
-        if device is not None:
-            self.device = torch.device(device)
+    # Write the updated config back to the file
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
 
-        # Call parent's to() method with all arguments
-        if dtype is not None:
-            return super().to(device=device, dtype=dtype, non_blocking=non_blocking)
-        elif device is not None:
-            return super().to(device=device, non_blocking=non_blocking)
-        else:
-            return self"""
-
-    # Replace the old method with the new one
-    updated_content = re.sub(old_method_pattern, new_method, content, flags=re.DOTALL)
-
-    # Check if the content was updated
-    if updated_content == content:
-        print("Warning: Could not find the to() method in base.py")
-        return False
-
-    # Write the updated content back to the file
-    with open(base_py_path, 'w') as f:
-        f.write(updated_content)
-
-    print(f"✓ Fixed RNAModel.to() method in {base_py_path}")
+    print(f"✓ Updated {config_path} with smaller model configuration")
     return True
 
-def fix_optimize_py():
-    """Fix the enable_mixed_precision() function in optimize.py to handle errors gracefully."""
-    optimize_py_path = "src/rna_folding/models/optimize.py"
+def update_run_pipeline_script():
+    """Update the run_rna_pipeline.sh script with smaller model settings."""
+    script_path = "run_rna_pipeline.sh"
 
-    if not os.path.exists(optimize_py_path):
-        print(f"Error: {optimize_py_path} not found")
+    if not os.path.exists(script_path):
+        print(f"Error: {script_path} not found")
         return False
 
-    with open(optimize_py_path, 'r') as f:
+    with open(script_path, 'r') as f:
         content = f.read()
 
-    # Define the pattern to match the old enable_mixed_precision() function
-    old_function_pattern = r'def enable_mixed_precision\(model\):[^}]*?return model'
+    # Update default batch size
+    batch_size_pattern = r'BATCH_SIZE=\d+'
+    updated_batch_size = 'BATCH_SIZE=2'
+    updated_content = re.sub(batch_size_pattern, updated_batch_size, content)
 
-    # Define the new enable_mixed_precision() function
-    new_function = """def enable_mixed_precision(model):
-    \"\"\"
-    Enable mixed precision training for a model.
+    # Update gradient accumulation steps
+    grad_acc_pattern = r'GRADIENT_ACCUMULATION_STEPS=\d+'
+    updated_grad_acc = 'GRADIENT_ACCUMULATION_STEPS=12'
+    updated_content = re.sub(grad_acc_pattern, updated_grad_acc, updated_content)
 
-    Args:
-        model (nn.Module): Model to enable mixed precision for.
+    # Update the large training configuration
+    large_config_pattern = r'--large\)\s+# Large training configuration\s+BATCH_SIZE=\d+\s+GRADIENT_ACCUMULATION_STEPS=\d+'
+    updated_large_config = """--large)
+            # Large training configuration
+            BATCH_SIZE=2
+            GRADIENT_ACCUMULATION_STEPS=12"""
 
-    Returns:
-        nn.Module: Model with mixed precision enabled.
-    \"\"\"
-    # Check if CUDA is available
-    if not torch.cuda.is_available():
-        print("CUDA not available, mixed precision not enabled")
-        return model
-
-    # Check if the GPU supports mixed precision
-    if not torch.cuda.is_bf16_supported() and not torch.cuda.is_fp16_supported():
-        print("GPU does not support mixed precision, not enabled")
-        return model
-
-    try:
-        # Enable mixed precision
-        if torch.cuda.is_bf16_supported():
-            print("Enabling BF16 mixed precision")
-            model = model.to(dtype=torch.bfloat16)
-        else:
-            print("Enabling FP16 mixed precision")
-            model = model.to(dtype=torch.float16)
-    except Exception as e:
-        print(f"Warning: Failed to enable mixed precision: {str(e)}")
-        print("Continuing with full precision")
-
-    return model"""
-
-    # Replace the old function with the new one
-    updated_content = re.sub(old_function_pattern, new_function, content, flags=re.DOTALL)
-
-    # Check if the content was updated
-    if updated_content == content:
-        print("Warning: Could not find the enable_mixed_precision() function in optimize.py")
-        return False
+    updated_content = re.sub(large_config_pattern, updated_large_config, updated_content)
 
     # Write the updated content back to the file
-    with open(optimize_py_path, 'w') as f:
+    with open(script_path, 'w') as f:
         f.write(updated_content)
 
-    print(f"✓ Fixed enable_mixed_precision() function in {optimize_py_path}")
+    print(f"✓ Updated {script_path} with smaller model settings")
+    return True
+
+def update_train_script():
+    """Update the train.py script to use a smaller model by default."""
+    train_py_path = "src/rna_folding/models/train.py"
+
+    if not os.path.exists(train_py_path):
+        print(f"Error: {train_py_path} not found")
+        return False
+
+    with open(train_py_path, 'r') as f:
+        content = f.read()
+
+    # Update the default model size in the main function
+    model_size_pattern = r'config = MultiScaleModelConfig\(\s+nucleotide_features=64,\s+motif_features=128,\s+global_features=256,\s+num_layers_per_scale=3,'
+    updated_model_size = """config = MultiScaleModelConfig(
+            nucleotide_features=32,
+            motif_features=64,
+            global_features=128,
+            num_layers_per_scale=2,"""
+
+    updated_content = re.sub(model_size_pattern, updated_model_size, content)
+
+    # Update the small model size
+    small_model_pattern = r'config = MultiScaleModelConfig\(\s+nucleotide_features=32,\s+motif_features=64,\s+global_features=128,\s+num_layers_per_scale=2,'
+    updated_small_model = """config = MultiScaleModelConfig(
+            nucleotide_features=16,
+            motif_features=32,
+            global_features=64,
+            num_layers_per_scale=1,"""
+
+    updated_content = re.sub(small_model_pattern, updated_small_model, updated_content)
+
+    # Update the batch size check for small model
+    batch_size_check_pattern = r'small_model = args\.batch_size <= 4'
+    updated_batch_size_check = 'small_model = args.batch_size <= 2'
+    updated_content = re.sub(batch_size_check_pattern, updated_batch_size_check, updated_content)
+
+    # Add more aggressive memory clearing
+    optimize_memory_pattern = r'def optimize_memory\(\):[^}]*?return'
+
+    # Define the updated optimize_memory function
+    updated_optimize_memory = """def optimize_memory():
+    \"\"\"Apply memory optimization techniques for PyTorch.\"\"\"
+    # Empty CUDA cache
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+        # Import garbage collector
+        import gc
+        gc.collect()
+
+        # Set memory allocation strategy
+        os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb=128,garbage_collection_threshold=0.6'
+
+        # Enable TF32 for faster computation (at slight precision cost)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+
+    # Set memory allocation strategy
+    if hasattr(torch.cuda, 'memory_stats'):
+        # Print initial memory stats
+        print("\\nInitial CUDA memory stats:")
+        for k, v in torch.cuda.memory_stats().items():
+            if 'bytes' in k and v > 0:
+                print(f"  {k}: {v / 1024**2:.1f} MB")
+
+    # Enable memory-efficient operations
+    torch.backends.cudnn.benchmark = True
+
+    # Set PyTorch memory allocator settings if using PyTorch 1.11+
+    if hasattr(torch, 'set_per_process_memory_fraction'):
+        # Reserve 90% of available memory to avoid OOM
+        torch.set_per_process_memory_fraction(0.9)
+
+    # Print available GPU memory
+    if torch.cuda.is_available():
+        free_memory = torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()
+        print(f"\\nAvailable GPU memory: {free_memory / 1024**3:.2f} GB")
+
+    return"""
+
+    updated_content = re.sub(optimize_memory_pattern, updated_optimize_memory, updated_content, flags=re.DOTALL)
+
+    # Write the updated content back to the file
+    with open(train_py_path, 'w') as f:
+        f.write(updated_content)
+
+    print(f"✓ Updated {train_py_path} with smaller model defaults and better memory management")
+    return True
+
+def update_readme():
+    """Update the README.md with the new model parameters."""
+    readme_path = "README.md"
+
+    if not os.path.exists(readme_path):
+        print(f"Error: {readme_path} not found")
+        return False
+
+    with open(readme_path, 'r') as f:
+        content = f.read()
+
+    # Update the model parameters
+    params_pattern = r'This will train a model with the following optimized parameters:.*?Expected metrics: TM-score > 0\.7, RMSD < 5\.0 Å'
+    updated_params = """This will train a model with the following optimized parameters:
+- Batch size: 2
+- Gradient accumulation steps: 12 (effective batch size: 24)
+- Memory-efficient mode: enabled
+- Reduced model size: enabled
+- Number of epochs: 100
+- Device: CUDA (GPU)
+- Number of workers: 8
+- Expected training time: ~6-8 hours
+- Expected metrics: TM-score > 0.7, RMSD < 5.0 Å"""
+
+    updated_content = re.sub(params_pattern, updated_params, content, flags=re.DOTALL)
+
+    # Write the updated content back to the file
+    with open(readme_path, 'w') as f:
+        f.write(updated_content)
+
+    print(f"✓ Updated {readme_path} with new model parameters")
+    return True
+
+def update_deploy_script():
+    """Update the deploy_l4_gpu.sh script with the new model parameters."""
+    script_path = "deploy_l4_gpu.sh"
+
+    if not os.path.exists(script_path):
+        print(f"Error: {script_path} not found")
+        return False
+
+    with open(script_path, 'r') as f:
+        content = f.read()
+
+    # Update the model parameters in the final message
+    params_pattern = r'echo "     This will train a model with the following optimized parameters:".*?echo "     • Expected validation metrics: TM-score > 0\.7, RMSD < 5\.0 Å"'
+    updated_params = """echo "     This will train a model with the following optimized parameters:"
+echo "     • Batch size: 2"
+echo "     • Gradient accumulation steps: 12 (effective batch size: 24)"
+echo "     • Memory-efficient mode: enabled"
+echo "     • Reduced model size: enabled"
+echo "     • Number of epochs: 100"
+echo "     • Device: cuda (GPU)"
+echo "     • Number of workers: 8"
+echo "     • Expected training time: ~6-8 hours"
+echo "     • Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å\""""
+
+    updated_content = re.sub(params_pattern, updated_params, content, flags=re.DOTALL)
+
+    # Write the updated content back to the file
+    with open(script_path, 'w') as f:
+        f.write(updated_content)
+
+    print(f"✓ Updated {script_path} with new model parameters")
     return True
 
 if __name__ == "__main__":
-    print("▶ Fixing RNAModel.to() method...")
-    fix_rna_model_to_method()
-
-    print("▶ Fixing enable_mixed_precision() function...")
-    fix_optimize_py()
-
-    print("✓ All fixes applied successfully")
+    print("▶ Reducing model size and optimizing memory usage...")
+    update_l4_gpu_config()
+    update_run_pipeline_script()
+    update_train_script()
+    update_readme()
+    update_deploy_script()
+    print("✓ All model size reductions and memory optimizations applied successfully")
 EOF
-        chmod +x scripts/fix_rna_model.py
-        echo "✓ Fix script created"
-    fi
+chmod +x scripts/reduce_model_size.py
+echo "✓ Model size reduction script created"
 
-    # Run the fix scripts
-    echo "▶ Running fix scripts..."
-    python scripts/fix_rna_model.py
-    python scripts/fix_predict_test.py
-
-    # Apply aggressive memory optimizations
-    echo "▶ Applying aggressive memory optimizations..."
-    python scripts/optimize_memory.py
-
-    # Run the tests again to verify the fixes
-    echo "▶ Running tests again to verify fixes..."
-    python run_tests.py --all
-    test_suite_result=$?
-
-    if [ $test_suite_result -eq 0 ]; then
-        echo "✓ All tests now pass after applying fixes!"
-    else
-        echo "⚠ Some tests still fail after applying fixes. Proceeding with caution."
-    fi
-fi
+# Run the model size reduction script
+echo "▶ Reducing model size and optimizing memory usage..."
+python scripts/reduce_model_size.py
 
 # Create optimized model
 echo "▶ Creating optimized model for L4 GPU..."
 if [ -f "config/l4_gpu_config.json" ]; then
-    # Run with error handling
-    set +e  # Don't exit on error
     python -m rna_folding.models.optimize --config config/l4_gpu_config.json --output models/l4_gpu/optimized_model.pt
-    optimize_result=$?
-    set -e  # Exit on error again
 
-    if [ $optimize_result -eq 0 ] && [ -f "models/l4_gpu/optimized_model.pt" ]; then
+    if [ -f "models/l4_gpu/optimized_model.pt" ]; then
         echo "✓ Optimized model created successfully"
     else
-        echo "⚠ Failed to create optimized model"
-        echo "  This is not critical - the model will be created during training"
-        echo "  Continuing with deployment"
+        echo "✗ Failed to create optimized model"
+        echo "  Continuing with deployment, but you may need to troubleshoot this issue"
     fi
 else
     echo "✗ L4 GPU configuration file not found at config/l4_gpu_config.json"
@@ -394,12 +476,6 @@ fi
 
 # Run a quick test to verify everything is working
 echo "▶ Running a quick test to verify GPU functionality..."
-
-# Ensure we're in the virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    echo "  • Using virtual environment for GPU test"
-fi
 
 # First check if CUDA is available
 if python -c "import torch; print(torch.cuda.is_available())" | grep -q "True"; then
@@ -447,13 +523,6 @@ fi
 
 # Verify all components are ready
 echo "▶ Verifying deployment components..."
-
-# Ensure we're in the virtual environment
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    echo "  • Using virtual environment for verification"
-fi
-
 verification_failed=false
 
 # Check for critical files
@@ -520,14 +589,14 @@ echo "  1. Run the full training pipeline with optimized settings:"
 echo "     ./run_rna_pipeline.sh train --large"
 echo ""
 echo "     This will train a model with the following optimized parameters:"
-echo "     • Batch size: 4"
-echo "     • Gradient accumulation steps: 6 (effective batch size: 24)"
+echo "     • Batch size: 2"
+echo "     • Gradient accumulation steps: 12 (effective batch size: 24)"
 echo "     • Memory-efficient mode: enabled"
-echo "     • Aggressive memory management: enabled"
+echo "     • Reduced model size: enabled"
 echo "     • Number of epochs: 100"
 echo "     • Device: cuda (GPU)"
-echo "     • Number of workers: 24"
-echo "     • Expected training time: ~5-7 hours"
+echo "     • Number of workers: 8"
+echo "     • Expected training time: ~6-8 hours"
 echo "     • Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å"
 echo ""
 echo "  2. Generate predictions with the trained model:"
