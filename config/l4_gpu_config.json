@@ -21,7 +21,7 @@
     "gradient_accumulation_steps": 3,
     "memory_efficient": true,
     "early_stopping_patience": 10,
-    "num_workers": 8,
+    "num_workers": 24,
     "mixed_precision": true,
     "checkpoint_interval": 5
   },
@@ -47,8 +47,8 @@
   "system_config": {
     "device": "cuda",
     "gpu_memory": 23,
-    "system_memory": 62,
-    "num_cpus": 16,
+    "system_memory": 503,
+    "num_cpus": 64,
     "precision": "float16"
   }
 }

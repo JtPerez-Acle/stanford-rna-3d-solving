@@ -4,7 +4,7 @@ This project implements a groundbreaking multi-scale equivariant architecture fo
 
 ## Deployment Quick Guide
 
-This project is optimized for systems with an NVIDIA L4 GPU (23GB VRAM), 62GB RAM, and 16 vCPUs. Follow these steps to deploy and run the pipeline:
+This project is optimized for systems with an NVIDIA L4 GPU (23GB VRAM), 503GB RAM, and 64 vCPUs. Follow these steps to deploy and run the pipeline:
 
 ### Step 1: Clone and Deploy
 
@@ -39,8 +39,8 @@ This will train a model with the following optimized parameters:
 - Memory-efficient mode: enabled
 - Number of epochs: 100
 - Device: CUDA (GPU)
-- Number of workers: 8
-- Expected training time: ~6-8 hours
+- Number of workers: 24
+- Expected training time: ~4-6 hours
 - Expected metrics: TM-score > 0.7, RMSD < 5.0 Å
 
 ### Step 3: Generate Predictions

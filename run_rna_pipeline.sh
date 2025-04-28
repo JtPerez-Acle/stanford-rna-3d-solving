@@ -16,7 +16,7 @@ NUM_EPOCHS=100
 LEARNING_RATE=0.0001
 WEIGHT_DECAY=0.00001
 DEVICE="cuda"
-NUM_WORKERS=8
+NUM_WORKERS=24
 GRADIENT_ACCUMULATION_STEPS=3
 MEMORY_EFFICIENT=true
 NUM_PREDICTIONS=5
@@ -143,7 +143,7 @@ while [[ $# -gt 0 ]]; do
             MEMORY_EFFICIENT=true
             NUM_EPOCHS=100
             OUTPUT_DIR="models/large"
-            NUM_WORKERS=8
+            NUM_WORKERS=24
             shift
             ;;
         --micro)

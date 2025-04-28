@@ -34,7 +34,7 @@ echo "    - CPU cores: ${cpu_cores}"
 # Check minimum requirements
 if [ $total_memory -lt 50 ]; then
     echo "⚠ Warning: System has less than 50GB of RAM (${total_memory}GB)"
-    echo "  This may affect performance. Recommended: 62GB+"
+    echo "  This may affect performance. Recommended: 500GB+"
 fi
 
 if [ ${disk_space%.*} -lt 30 ]; then
@@ -42,9 +42,9 @@ if [ ${disk_space%.*} -lt 30 ]; then
     echo "  This may not be enough for the dataset and models. Recommended: 40GB+"
 fi
 
-if [ $cpu_cores -lt 12 ]; then
-    echo "⚠ Warning: System has less than 12 CPU cores (${cpu_cores})"
-    echo "  This may affect performance. Recommended: 16+ cores"
+if [ $cpu_cores -lt 16 ]; then
+    echo "⚠ Warning: System has less than 16 CPU cores (${cpu_cores})"
+    echo "  This may affect performance. Recommended: 64+ cores"
 fi
 
 # Check if CUDA is available
@@ -339,8 +339,8 @@ echo "     • Gradient accumulation steps: 3 (effective batch size: 24)"
 echo "     • Memory-efficient mode: enabled"
 echo "     • Number of epochs: 100"
 echo "     • Device: cuda (GPU)"
-echo "     • Number of workers: 8"
-echo "     • Expected training time: ~6-8 hours"
+echo "     • Number of workers: 24"
+echo "     • Expected training time: ~4-6 hours"
 echo "     • Expected validation metrics: TM-score > 0.7, RMSD < 5.0 Å"
 echo ""
 echo "  2. Generate predictions with the trained model:"
