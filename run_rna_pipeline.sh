@@ -3,6 +3,12 @@
 # This script combines all functionality for training, prediction, and evaluation
 # Optimized for systems with L4 GPU (23GB VRAM), 62GB RAM, and 16 vCPUs
 
+# Activate virtual environment if it exists
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    echo "Activated virtual environment"
+fi
+
 # Set PyTorch memory management environment variables
 export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 
@@ -163,11 +169,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Activate virtual environment if it exists
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    echo "Activated virtual environment"
-fi
+# Virtual environment is already activated at the beginning of the script
 
 # Function to print header
 print_header() {
