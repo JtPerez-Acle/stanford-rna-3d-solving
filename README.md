@@ -1,6 +1,6 @@
 # Stanford RNA 3D Folding
 
-This project implements a groundbreaking multi-scale equivariant architecture for RNA 3D structure prediction with physics-informed neural networks for the [Stanford RNA 3D Folding Kaggle competition](https://www.kaggle.com/competitions/stanford-rna-3d-folding).
+This project implements a multi-scale equivariant architecture for RNA 3D structure prediction with physics-informed neural networks for the [Stanford RNA 3D Folding Kaggle competition](https://www.kaggle.com/competitions/stanford-rna-3d-folding).
 
 ## Deployment Quick Guide
 
